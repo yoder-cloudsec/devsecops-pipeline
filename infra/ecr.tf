@@ -1,5 +1,5 @@
 resource "aws_ecr_repository" "app" {
-  name = "supply-chain"
+  name = "devsecops-pipeline"
   image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
