@@ -10,7 +10,7 @@ permissions:
 
 env:
   AWS_REGION: eu-south-2
-  ECR_REPOSITORY: supply-chain-demo
+  ECR_REPOSITORY: devsecops-pipeline
 
 jobs:
   build-and-push:
