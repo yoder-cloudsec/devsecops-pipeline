@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 
 app = Flask(__name__)
 
@@ -11,8 +11,3 @@ def index():
 @app.get('/health')
 def health():
     return jsonify(status='ok')
-
-
-@app.get('/calc')
-def calc():
-    return jsonify(result=eval(request.args.get('expr', '0')))
