@@ -96,5 +96,5 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
-          docker tag supply-chain-demo:$GITHUB_SHA "$IMAGE"
+          docker tag devsecops-pipeline:$GITHUB_SHA "$IMAGE"
           docker push "$IMAGE"
