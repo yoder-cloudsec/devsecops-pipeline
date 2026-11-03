@@ -13,7 +13,7 @@ env:
   ECR_REPOSITORY: devsecops-pipeline
   # "false" = report mode: scanners run and show findings but do not block.
   # "true"  = enforce mode: any finding fails the pipeline and blocks the push.
-  ENFORCE: "false"
+  ENFORCE: "true"
 
 jobs:
   gitleaks:
