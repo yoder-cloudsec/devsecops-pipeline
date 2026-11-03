@@ -11,11 +11,50 @@ permissions:
 env:
   AWS_REGION: eu-south-2
   ECR_REPOSITORY: devsecops-pipeline
+  # "false" = report mode: scanners run and show findings but do not block.
+  # "true"  = enforce mode: any finding fails the pipeline and blocks the push.
+  ENFORCE: "false"
 
 jobs:
-  build-and-push:
-    # Only pushes to main get cloud credentials; pull requests never do
-    if: github.event_name == 'push'
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: ${{ env.ENFORCE != 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static analysis
+        continue-on-error: ${{ env.ENFORCE != 'true' }}
+        run: >
+          semgrep scan --metrics=off --error
+          --config p/python --config p/security-audit --config p/owasp-top-ten app/
+
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit dependencies
+        continue-on-error: ${{ env.ENFORCE != 'true' }}
+        run: |
+          pip install --quiet pip-audit
+          pip-audit -r app/requirements.txt
+
+  build:
+    needs: [gitleaks, semgrep, dependencies]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,32 +62,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug - show OIDC claims (not the token)
-        run: |
-          TOKEN=$(curl -sH "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
-          echo "::add-mask::$TOKEN"
-          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+')
-          while [ $(( ${#PAYLOAD} % 4 )) -ne 0 ]; do PAYLOAD="${PAYLOAD}="; done
-          echo "$PAYLOAD" | base64 -d | jq '{iss, aud, sub}'
+      - name: Build image
+        run: docker build -t devsecops-pipeline:${{ github.sha }} app/
 
-      - name: Assume the AWS role via OIDC (no stored keys)
+      - name: Scan Dockerfile (Trivy config)
+        continue-on-error: ${{ env.ENFORCE != 'true' }}
+        run: |
+          docker run --rm -v "$PWD/app:/src" aquasec/trivy:latest \
+            config --severity HIGH,CRITICAL --exit-code 1 /src
+
+      - name: Scan image (Trivy)
+        continue-on-error: ${{ env.ENFORCE != 'true' }}
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            supply-chain-demo:${{ github.sha }}
+
+      - name: Assume AWS role via OIDC (no stored keys)
+        if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Show the identity we got
-        run: aws sts get-caller-identity
-
       - name: Log in to ECR
+        if: github.event_name == 'push'
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push
+      - name: Tag and push
+        if: github.event_name == 'push'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
-          docker build -t "$IMAGE" app/
+          docker tag supply-chain-demo:$GITHUB_SHA "$IMAGE"
           docker push "$IMAGE"
