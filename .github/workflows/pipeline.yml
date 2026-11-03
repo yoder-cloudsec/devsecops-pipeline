@@ -76,7 +76,7 @@ jobs:
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
             image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
-            supply-chain-demo:${{ github.sha }}
+            devsecops-pipeline:${{ github.sha }}
 
       - name: Assume AWS role via OIDC (no stored keys)
         if: github.event_name == 'push'
