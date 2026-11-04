@@ -98,3 +98,56 @@ jobs:
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
           docker tag devsecops-pipeline:$GITHUB_SHA "$IMAGE"
           docker push "$IMAGE"
+          
+      - name: Resolve the pushed image digest
+        if: github.event_name == 'push'
+        id: digest
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          REF=$(docker inspect --format='{{index .RepoDigests 0}}' "$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA")
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Image: $REF" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate the SBOM (Trivy, CycloneDX)
+        if: github.event_name == 'push'
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/out" \
+            aquasec/trivy:latest image --format cyclonedx --output /out/sbom.cdx.json \
+            devsecops-pipeline:${{ github.sha }}
+
+      - name: Keep the SBOM as a build artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
+      - name: Install cosign
+        if: github.event_name == 'push'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign the image and attach the SBOM attestation (keyless)
+        if: github.event_name == 'push'
+        env:
+          IMAGE_REF: ${{ steps.digest.outputs.ref }}
+        run: |
+          cosign version
+          cosign sign --yes "$IMAGE_REF"
+          cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$IMAGE_REF"
+
+      - name: Verify signature and attestation, pinned to this workflow's identity
+        if: github.event_name == 'push'
+        env:
+          IMAGE_REF: ${{ steps.digest.outputs.ref }}
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/pipeline.yml@refs/heads/main
+        run: |
+          cosign verify \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE_REF"
+          cosign verify-attestation --type cyclonedx \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE_REF" > /dev/null
+          echo "Signed and verified: $IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
