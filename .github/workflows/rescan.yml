@@ -34,6 +34,19 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
+      - name: Pick the image to rescan
+        id: pick
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="$INPUT_TAG"
+          if [ -z "$TAG" ]; then
+            TAG=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+              --query 'sort_by(imageDetails[?imageTags!=`null` && !starts_with(imageTags[0], `sha256-`)], &imagePushedAt)[-1].imageTags[0]' \
+              --output text)
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Rescan with today's vulnerability data
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}

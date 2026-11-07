@@ -45,7 +45,8 @@ resource "aws_iam_role_policy" "ecr_push" {
           "ecr:CompleteLayerUpload",
           "ecr:PutImage",
           "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer"
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:DescribeImages"
         ]
         Resource = aws_ecr_repository.app.arn
       }
