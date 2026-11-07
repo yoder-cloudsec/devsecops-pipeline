@@ -1,0 +1,12 @@
+vulnerabilities:
+  - id: CVE-2026-85091
+    statement: >-
+      zlib heap overflow in gz_vacate(). Debian lists a fix (1:1.3.dfsg+really1.3.1-1+deb13u1)
+      but it is not yet in the repositories the base image uses (apt-cache policy checked
+      <date>). The app serves HTTP via Flask/gunicorn and does not use zlib's gz* file API
+      <edit this to what you verified>. Remove when the fix lands.
+    expired_at: 2026-11-21
+  - id: CVE-2026-76844
+    statement: >-
+      Remove when the data is corrected or fixed.
+    expired_at: 2026-11-21
